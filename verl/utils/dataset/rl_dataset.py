@@ -103,15 +103,6 @@ class RLHFDataset(Dataset):
 
         print(f'original dataset len: {len(self.dataframe)}')
 
-        # filter out too long prompts
-        tokenizer = self.tokenizer
-        prompt_key = self.prompt_key
-
-        # nvm if prompt is too long
-        # self.dataframe = self.dataframe[self.dataframe.apply(lambda doc: len(
-        #     tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)) <= self.max_prompt_length,
-        #                                                      axis=1)]
-
         print(f'filter dataset len: {len(self.dataframe)}')
 
     def __len__(self):
@@ -128,18 +119,21 @@ class RLHFDataset(Dataset):
         prompt_with_chat_template = chat[0]['content']
         # prompt_with_chat_template = chat
 
-        input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(prompt=prompt_with_chat_template,
-                                                                         tokenizer=self.tokenizer,
-                                                                         max_length=self.max_prompt_length,
-                                                                         pad_token_id=self.tokenizer.pad_token_id,
-                                                                         left_pad=True,
-                                                                         truncation=self.truncation)
+        input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(
+            prompt=prompt_with_chat_template,
+            tokenizer=self.tokenizer,
+            max_length=self.max_prompt_length,
+            pad_token_id=self.tokenizer.pad_token_id,
+            left_pad=True,
+            truncation=self.truncation)
 
         position_ids = compute_position_id_with_mask(attention_mask)
 
-        row_dict['input_ids'] = input_ids[0]
-        row_dict['attention_mask'] = attention_mask[0]
-        row_dict['position_ids'] = position_ids[0]
+        # In Single-Agent Env, input_ids is of size(max_prompt_length)
+        # In Multi-Agent Env, input_ids is of size(n_agent, max_prompt_length)
+        row_dict['input_ids'] = input_ids.squeeze(0)
+        row_dict['attention_mask'] = attention_mask.squeeze(0)
+        row_dict['position_ids'] = position_ids.squeeze(0)
 
         # encode prompts without chat template
         if self.return_raw_chat:

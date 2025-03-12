@@ -42,7 +42,7 @@ from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seql
 
 import re
 from ragen.llm_agent.generation import LLMGenerationManager, GenerationConfig
-
+from ragen.env.overcooked.env import OverCookedEnv
 WorkerType = Type[Worker]
 
 
@@ -606,8 +606,10 @@ class RayPPOTrainer(object):
             config=gen_config,
             logger = logger,
         )
-
-        envs = [self.env.copy() for _ in range(self.config.data.train_batch_size * self.config.actor_rollout_ref.rollout.n_agent)] 
+        # if isinstance(self.env, OverCookedEnv):
+        #     pass
+        # else:
+        #     envs = [self.env.copy() for _ in range(self.config.data.train_batch_size * self.config.actor_rollout_ref.rollout.n_agent)] 
 
 
 
@@ -636,31 +638,22 @@ class RayPPOTrainer(object):
 
                 env_seeds = [i['index'] for i in batch.non_tensor_batch['extra_info']]
                 print("env_seeds:", env_seeds)
-                for env, seed in zip(envs, env_seeds):
-                    env.reset(seed=seed)
+                #TODO(wenyule): Here the envs are reset after max_turns rolled out. Later states may be unable to get rolled out.
+                if isinstance(self.env, OverCookedEnv):
+                    envs = []
+                    for seed in env_seeds:
+                        layout_name = OverCookedEnv.LAYOUTS[seed]
+                        envs.append(OverCookedEnv(layout_name=layout_name))
+                else:
+                    envs = []
+                    for seed in env_seeds:
+                        env = self.env.copy()
+                        env.reset(seed=seed)
+                        envs.append(env)
 
 
                 # pop those keys for generation
                 gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
-
-                ####################
-                # original code here
-
-                # with _timer('gen', timing_raw):
-                #     gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
-
-                #     batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],
-                #                                              dtype=object)
-                #     # repeat to align with repeated responses in rollout
-                #     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
-                #     batch = batch.union(gen_batch_output)
-
-                #     # output batch to file
-                #     self._record_batch(batch, path=f'.log/{self.config.trainer.experiment_name}/gen_batch.txt')
-
-                ####################
-                # Below is aLL about agents - the "LLM + forloop"
-                ####################
 
                 with _timer('step', timing_raw):
                     """
@@ -672,7 +665,7 @@ class RayPPOTrainer(object):
                     Errors swarm? Stay calm, don't fret- Code with coffee, debug sunset.
                     """
 
-                    first_input_ids = gen_batch.batch['input_ids'][:, -gen_config.max_start_length:].clone()
+                    first_input_ids = gen_batch.batch['input_ids'][..., -gen_config.max_start_length:].clone()
                     output_dir = (f"{self.config.logging.log_image_dir}/"
                                  f"{self.config.trainer.experiment_name}/"
                                  f"train/"
@@ -680,13 +673,21 @@ class RayPPOTrainer(object):
 
                     with _timer('gen', timing_raw):
                         generation_manager.timing_raw = timing_raw
-                        final_gen_batch_output = generation_manager.run_llm_loop(
-                            gen_batch=gen_batch,
-                            envs=envs,
-                            initial_input_ids=first_input_ids,
-                            output_dir=output_dir,
-                            global_steps=self.global_steps,
-                        )
+                        if isinstance(env, OverCookedEnv):
+                            final_gen_batch_output = generation_manager.MA_llm_loop(
+                                gen_batch=gen_batch,
+                                envs=envs,
+                                initial_input_ids=first_input_ids,
+                                output_dir=output_dir,                            global_steps=self.global_steps,
+                            )
+                        else:
+                            final_gen_batch_output = generation_manager.run_llm_loop(
+                                gen_batch=gen_batch,
+                                envs=envs,
+                                initial_input_ids=first_input_ids,
+                                output_dir=output_dir,
+                                global_steps=self.global_steps,
+                            )
 
                     with torch.no_grad():
                         output = self.actor_rollout_wg.compute_log_prob(final_gen_batch_output)
@@ -915,18 +916,26 @@ class RayPPOTrainer(object):
             is_validation = True,
         )
 
-        envs = [self.val_env.copy() for _ in range(self.config.data.val_batch_size * self.config.actor_rollout_ref.rollout.n_agent)]
+        # envs = [self.val_env.copy() for _ in range(self.config.data.val_batch_size * self.config.actor_rollout_ref.rollout.n_agent)]
         val_global_steps = 1
 
         for batch_dict in self.val_dataloader:
             timing_raw = {}
             test_batch: DataProto = DataProto.from_single_dict(batch_dict)
             test_batch = test_batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n_agent, interleave=True)
-
             env_seeds = [i['index'] for i in test_batch.non_tensor_batch['extra_info']]
             print("env_seeds:", env_seeds)
-            for env, seed in zip(envs, env_seeds):
-                env.reset(seed=seed)
+            if isinstance(self.env, OverCookedEnv):
+                envs = []
+                for seed in env_seeds:
+                    layout_name = OverCookedEnv.LAYOUTS[seed]
+                    envs.append(OverCookedEnv(layout_name=layout_name))
+            else:
+                envs = []
+                for seed in env_seeds:
+                    env = self.env.copy()
+                    env.reset(seed=seed)
+                    envs.append(env)
             
             test_gen_batch = test_batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
             test_gen_batch.meta_info = {
@@ -944,13 +953,21 @@ class RayPPOTrainer(object):
                                 f"step_{val_global_steps}")
                 with _timer('gen', timing_raw):
                     generation_manager.timing_raw = timing_raw
-                    final_gen_batch_output = generation_manager.run_llm_loop(
-                        gen_batch=test_gen_batch,
-                        envs=envs,
-                        initial_input_ids=first_input_ids,
-                        output_dir=output_dir,
-                        global_steps=val_global_steps,
-                    )
+                    if isinstance(env, OverCookedEnv):
+                        final_gen_batch_output = generation_manager.MA_llm_loop(
+                            gen_batch=test_gen_batch,
+                            envs=envs,
+                            initial_input_ids=first_input_ids,
+                            output_dir=output_dir,                            global_steps=self.global_steps,
+                        )
+                    else:
+                        final_gen_batch_output = generation_manager.run_llm_loop(
+                            gen_batch=test_gen_batch,
+                            envs=envs,
+                            initial_input_ids=first_input_ids,
+                            output_dir=output_dir,
+                            global_steps=self.global_steps,
+                        )
                 with torch.no_grad():
                     output = self.actor_rollout_wg.compute_log_prob(final_gen_batch_output)
                     final_gen_batch_output = final_gen_batch_output.union(output)

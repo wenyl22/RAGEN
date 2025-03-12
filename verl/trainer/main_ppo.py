@@ -28,7 +28,8 @@ from ragen.env import (
     FrozenLakeEnv, 
     BanditEnv, 
     TwoArmedBanditEnv, 
-    CountdownEnv
+    CountdownEnv,
+    OverCookedEnv
 )
 
 ENV_CLASS_MAPPING = {
@@ -36,7 +37,8 @@ ENV_CLASS_MAPPING = {
     'frozenlake': FrozenLakeEnv,
     'bandit': BanditEnv,
     'two_armed_bandit': TwoArmedBanditEnv,
-    'countdown': CountdownEnv
+    'countdown': CountdownEnv,
+    'overcooked': OverCookedEnv
 }
 
 def _select_rm_score_fn(data_source):

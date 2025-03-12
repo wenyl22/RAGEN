@@ -13,6 +13,7 @@ from ragen.utils.plot import (
 from verl import DataProto
 from verl.utils.tracking import Tracking
 import shutil
+from env.overcooked.env import OverCookedEnv
 
 @dataclass
 class GenerationConfig:
@@ -309,6 +310,69 @@ class LLMGenerationManager:
         # Save trajectory and return final output
         self._save_trajectory(trajectory, output_dir, global_steps)
         return self._compose_final_output(original_left_side, original_right_side, meta_info)
+    def MA_llm_loop(self, gen_batch, envs: List[Any],
+                    initial_input_ids: torch.Tensor,
+                    output_dir: str,
+                    global_steps: int) -> Tuple[Dict, Dict]:
+        """Run main LLM generation loop, multi-agent version."""
+        assert isinstance(envs[0], OverCookedEnv), "Currently MA Env only supports OverCookedEnv"
+        assert self.env_class == OverCookedEnv, "Currently MA Env only supports OverCookedEnv"
+        assert initial_input_ids.shape[-2] == 2, "Multi-agent input must have 2 agents"
+        original_left_side = [{'input_ids': initial_input_ids[:, i, -self.config.max_start_length:]} for i in range(2)]
+        original_right_side = {'responses': initial_input_ids[:, o, []] for o in range(2)}
+        
+        active_mask = torch.ones(gen_batch.batch['input_ids'].shape[0], dtype=torch.bool)
+        active_num_list = [active_mask.sum().item()]
+        # rollings is a length-2 list of DataProto objects, one for each agent
+        rollings = [DataProto.from_dict({
+            k: v[active_mask][:, _, :].squeeze(1) for k, v in gen_batch.batch.items()
+        }) for _ in range(2)]
+        # Main generation loop
+        for step in range(self.config.max_turns):
+            if not active_mask.sum():
+                break
+            responses_idss = [None, None]
+            responses_strs = [None, None]
+            for _ in range(2):
+                rollings[_].batch = self.tensor_fn.cut_to_effective_len(
+                    rollings[_].batch,
+                    keys=['input_ids', 'attention_mask', 'position_ids']
+                )
+                rollings_active = DataProto.from_dict({
+                    k: v[active_mask] for k, v in rollings[_].batch.items()
+                })
+                gen_output = self._generate_with_gpu_padding(rollings_active)
+   
+                responses_strs[_] = gen_output.batch['responses']
+                responses_idss[_] = self._batch_tokenize(responses_strs[_])
+                responses_idss[_], responses_strs[_] = self.tensor_fn._example_level_pad(responses_idss[_], responses_strs[_], active_mask)
+            responses_ids = torch.stack(responses_idss, dim=1)
+            responses_str = list(zip(responses_strs[0], responses_strs[1]))
+            # Execute in environment and process observations
+            next_obs, dones = self.env_class.execute_predictions(
+                envs, responses_str, responses_ids, self.tokenizer
+            )
+            
+            active_mask = torch.tensor([not done for done in dones], dtype=torch.bool)
+            active_num_list.append(active_mask.sum().item())
+            next_obs_ids = [self._process_next_obs([obs[i] for obs in next_obs]) for i in range(2)]            
+            # Update states
+            for _ in range(2):
+                rollings[_] = self._update_rolling_state(
+                    rollings[_],
+                    responses_ids[_],
+                    next_obs_ids[_]
+                )
+                original_right_side[_] = self._update_right_side(
+                    original_right_side[_],
+                    responses_ids[_],
+                    next_obs_ids[_]
+                )
+        original_left_side = {'input_ids': torch.stack([original_left_side[i]['input_ids'] for i in range(2)], dim=0)}
+        original_right_side = {'responses': torch.stack([original_right_side[i]['responses'] for i in range(2)], dim=0)}
+        print("ACTIVE_TRAJ_NUM:", active_num_list)
+        return self._compose_final_output(original_left_side, original_right_side, {})
+        # Save
 
     def _setup_visualization(self) -> List[Dict]:
         """Setup visualization tracking if enabled."""

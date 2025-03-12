@@ -222,7 +222,7 @@ def pad_sequence_to_length(tensors, max_seq_len, pad_token_id, left_pad=False):
 from transformers import PreTrainedTokenizer
 
 
-def tokenize_and_postprocess_data(prompt: str,
+def tokenize_and_postprocess_data(prompt: Union[str, List[str]],
                                   tokenizer: PreTrainedTokenizer,
                                   max_length: int,
                                   pad_token_id: int,
