@@ -735,7 +735,7 @@ class OvercookedGridworld(object):
         sparse_reward, shaped_reward = 0, 0
         sparse_reward_by_agent = [0] * self.num_players
         shaped_reward_by_agent = [0] * self.num_players
-        for _, player, action in enumerate(zip(new_state.players, joint_action)):
+        for _, (player, action) in enumerate(zip(new_state.players, joint_action)):
             if action != Action.INTERACT:
                 continue
 

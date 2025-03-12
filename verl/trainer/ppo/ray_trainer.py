@@ -638,7 +638,8 @@ class RayPPOTrainer(object):
 
                 env_seeds = [i['index'] for i in batch.non_tensor_batch['extra_info']]
                 print("env_seeds:", env_seeds)
-                #TODO(wenyule): Here the envs are reset after max_turns rolled out. Later states may be unable to get rolled out.
+                # TODO(wenyule): Here the envs are reset after max_turns rolled out. 
+                # Later states may be unable to get rolled out.
                 if isinstance(self.env, OverCookedEnv):
                     envs = []
                     for seed in env_seeds:
@@ -673,13 +674,16 @@ class RayPPOTrainer(object):
 
                     with _timer('gen', timing_raw):
                         generation_manager.timing_raw = timing_raw
-                        if isinstance(env, OverCookedEnv):
+                        if isinstance(self.env, OverCookedEnv):
                             final_gen_batch_output = generation_manager.MA_llm_loop(
                                 gen_batch=gen_batch,
                                 envs=envs,
                                 initial_input_ids=first_input_ids,
-                                output_dir=output_dir,                            global_steps=self.global_steps,
+                                output_dir=output_dir,
+                                global_steps=self.global_steps,
                             )
+                            if final_gen_batch_output.batch_size != 2:
+                                print("AAAAAAAA")
                         else:
                             final_gen_batch_output = generation_manager.run_llm_loop(
                                 gen_batch=gen_batch,
@@ -692,7 +696,9 @@ class RayPPOTrainer(object):
                     with torch.no_grad():
                         output = self.actor_rollout_wg.compute_log_prob(final_gen_batch_output)
                         final_gen_batch_output = final_gen_batch_output.union(output)
-                    
+                        if final_gen_batch_output.batch_size != 2:
+                            print("BBBBBBB")
+        # current algorithm use GAE, ignore these!!
                     if self.config.algorithm.adv_estimator == 'grpo': # NOTE we currently use seed to group, better use prompt (hash) to group
                         batch.non_tensor_batch['uid'] = np.array([str(i) for i in env_seeds], dtype=object)
                     elif self.config.algorithm.adv_estimator == 'brpo':
@@ -953,7 +959,7 @@ class RayPPOTrainer(object):
                                 f"step_{val_global_steps}")
                 with _timer('gen', timing_raw):
                     generation_manager.timing_raw = timing_raw
-                    if isinstance(env, OverCookedEnv):
+                    if isinstance(self.val_env, OverCookedEnv):
                         final_gen_batch_output = generation_manager.MA_llm_loop(
                             gen_batch=test_gen_batch,
                             envs=envs,

@@ -19,3 +19,5 @@ vllm==0.6.3
 wandb
 gymnasium
 gymnasium[toy-text]
+fuzzywuzzy
+python-Levenshtein

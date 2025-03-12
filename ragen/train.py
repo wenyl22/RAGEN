@@ -71,9 +71,12 @@ def get_rl_train_command(config: Dict[str, Any]) -> str:
    
     # Define the command template with proper indentation
     env_kwargs = config['env']['env_kwargs']
-    env_kwargs_str = " \\\n    ".join([
-        f"+env.{key}={value}" if value is not None else f"+env.{key}=null" for key, value in env_kwargs.items()
-    ])
+    if env_kwargs is None:
+        env_kwargs_str = ""
+    else:
+        env_kwargs_str = " \\\n    ".join([
+            f"+env.{key}={value}" if value is not None else f"+env.{key}=null" for key, value in env_kwargs.items()
+        ])
    
     cmd = [
         f"VLLM_ATTENTION_BACKEND={config['system']['vllm_attention_backend']}",

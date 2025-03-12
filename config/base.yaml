@@ -10,7 +10,7 @@ system:
 
 # Model settings
 model:
-  base_model: "Qwen/Qwen2.5-0.5B-Instruct"
+  base_model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
   experiment_name: "ragen-main-exp"
   gradient_checkpointing: true
 
@@ -18,16 +18,17 @@ model:
 training:
   train_data_num: null
   val_data_num: 50
-  micro_batch_size: 1
-  train_batch_size: 8
-  val_batch_size: 10
-  ppo_batch_size: 128
+  micro_batch_size: 1 
+  train_batch_size: 1
+# Each time rollout train_batch_size different envs, that is n_rollout * train_batch_size envs rolled out in each micro step
+  val_batch_size: 1
+  ppo_batch_size: 1 # Actual gradient descent batch size
   max_start_length: 400
-  max_response_length: 400
+  max_response_length: 1024
   max_obs_length: 200
-  max_turns: 5
-  rollout_tp_size: 1
-  n_rollout: 16
+  max_turns: 1 # Number of turns in each episode during rollout
+  rollout_tp_size: 1 #
+  n_rollout: 2 # Each env in the dataset is rolled out n_rollout times
   total_epochs: 5
   temperature: 0.7
   use_sft: false

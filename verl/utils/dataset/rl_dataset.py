@@ -116,8 +116,10 @@ class RLHFDataset(Dataset):
 
         chat = row_dict.pop(self.prompt_key)
 
-        prompt_with_chat_template = chat[0]['content']
-        # prompt_with_chat_template = chat
+        prompt_with_chat_template = chat['content']
+        # if it's numpy array, convert it to list
+        if isinstance(prompt_with_chat_template, np.ndarray):
+            prompt_with_chat_template = prompt_with_chat_template.tolist()
 
         input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(
             prompt=prompt_with_chat_template,

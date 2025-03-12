@@ -89,16 +89,31 @@ create_two_armed_bandit_dataset() {
 }
 
 
+create_overcooked_dataset() {
+    print_step "Configuring Overcooked environment settings..."
+    
+    print_step "Creating Overcooked dataset..."
+    
+    python ragen/env/overcooked/create_dataset.py \
+        --output data/overcooked \
+        --seed 100000 \
+        --train_size 512 \
+        --test_size 64 \
+        --prefix qwen-instruct
+        
+    echo -e "${GREEN}Overcooked dataset created successfully!${NC}"
+}
+
 # Main function
 main() {
     # Create data directory if it doesn't exist
     mkdir -p data/sokoban data/frozenlake data/two_armed_bandit
     
     # Create datasets
-    create_sokoban_dataset
-    create_frozen_lake_dataset
-    create_two_armed_bandit_dataset
-    
+    # create_sokoban_dataset
+    # create_frozen_lake_dataset
+    # create_two_armed_bandit_dataset
+    create_overcooked_dataset
     echo -e "${GREEN}All datasets created successfully!${NC}"
 }
 

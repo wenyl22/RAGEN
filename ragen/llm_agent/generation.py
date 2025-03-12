@@ -13,7 +13,8 @@ from ragen.utils.plot import (
 from verl import DataProto
 from verl.utils.tracking import Tracking
 import shutil
-from env.overcooked.env import OverCookedEnv
+from ragen.env.overcooked.env import OverCookedEnv
+import numpy as np
 
 @dataclass
 class GenerationConfig:
@@ -319,8 +320,9 @@ class LLMGenerationManager:
         assert self.env_class == OverCookedEnv, "Currently MA Env only supports OverCookedEnv"
         assert initial_input_ids.shape[-2] == 2, "Multi-agent input must have 2 agents"
         original_left_side = [{'input_ids': initial_input_ids[:, i, -self.config.max_start_length:]} for i in range(2)]
-        original_right_side = {'responses': initial_input_ids[:, o, []] for o in range(2)}
-        
+        original_right_side = [{'responses': initial_input_ids[:, i, []]} for i in range(2)]
+        print("original_left_side:", original_left_side[0]["input_ids"].shape, original_left_side[1]["input_ids"].shape)
+        print("original_right_side:", original_right_side[0]["responses"].shape, original_right_side[1]["responses"].shape)
         active_mask = torch.ones(gen_batch.batch['input_ids'].shape[0], dtype=torch.bool)
         active_num_list = [active_mask.sum().item()]
         # rollings is a length-2 list of DataProto objects, one for each agent
@@ -328,11 +330,14 @@ class LLMGenerationManager:
             k: v[active_mask][:, _, :].squeeze(1) for k, v in gen_batch.batch.items()
         }) for _ in range(2)]
         # Main generation loop
+        # only keep the trajectory of one player for each environment
+        # TODO(wenyule): self-play doesn not generalize, the other player should be another model
+        effective_player_id = [np.random.choice([0, 1]) for _ in range(len(envs))]
         for step in range(self.config.max_turns):
             if not active_mask.sum():
                 break
-            responses_idss = [None, None]
-            responses_strs = [None, None]
+            responses_ids = [None, None]
+            responses_str = [None, None]
             for _ in range(2):
                 rollings[_].batch = self.tensor_fn.cut_to_effective_len(
                     rollings[_].batch,
@@ -342,20 +347,21 @@ class LLMGenerationManager:
                     k: v[active_mask] for k, v in rollings[_].batch.items()
                 })
                 gen_output = self._generate_with_gpu_padding(rollings_active)
-   
-                responses_strs[_] = gen_output.batch['responses']
-                responses_idss[_] = self._batch_tokenize(responses_strs[_])
-                responses_idss[_], responses_strs[_] = self.tensor_fn._example_level_pad(responses_idss[_], responses_strs[_], active_mask)
-            responses_ids = torch.stack(responses_idss, dim=1)
-            responses_str = list(zip(responses_strs[0], responses_strs[1]))
+                meta_info = gen_output.meta_info
+                responses_str[_] = self.tokenizer.batch_decode(
+                    gen_output.batch['responses'],
+                    skip_special_tokens=True
+                )
+                responses_ids[_] = self._batch_tokenize(responses_str[_])
+                responses_ids[_], responses_str[_] = self.tensor_fn._example_level_pad(responses_ids[_], responses_str[_], active_mask)
             # Execute in environment and process observations
             next_obs, dones = self.env_class.execute_predictions(
-                envs, responses_str, responses_ids, self.tokenizer
+                envs, responses_str, responses_ids, self.tokenizer, effective_player_id
             )
             
             active_mask = torch.tensor([not done for done in dones], dtype=torch.bool)
             active_num_list.append(active_mask.sum().item())
-            next_obs_ids = [self._process_next_obs([obs[i] for obs in next_obs]) for i in range(2)]            
+            next_obs_ids = [self._process_next_obs([obs[i] for obs in next_obs]) for i in range(2)]
             # Update states
             for _ in range(2):
                 rollings[_] = self._update_rolling_state(
@@ -368,10 +374,11 @@ class LLMGenerationManager:
                     responses_ids[_],
                     next_obs_ids[_]
                 )
-        original_left_side = {'input_ids': torch.stack([original_left_side[i]['input_ids'] for i in range(2)], dim=0)}
-        original_right_side = {'responses': torch.stack([original_right_side[i]['responses'] for i in range(2)], dim=0)}
+        print(effective_player_id)
+        original_left_side_ = {'input_ids': torch.cat([original_left_side[a]['input_ids'][b].unsqueeze(0) for a, b in enumerate(effective_player_id)], dim=0)} 
+        original_right_side_ = {'responses': torch.cat([original_right_side[a]['responses'][b].unsqueeze(0) for a, b in enumerate(effective_player_id)], dim=0)} 
         print("ACTIVE_TRAJ_NUM:", active_num_list)
-        return self._compose_final_output(original_left_side, original_right_side, {})
+        return self._compose_final_output(original_left_side_, original_right_side_, meta_info)
         # Save
 
     def _setup_visualization(self) -> List[Dict]:

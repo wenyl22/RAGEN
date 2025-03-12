@@ -145,6 +145,7 @@ class LLMActionManager(object):
     def make_next_move(self, state, current_stage):
         self.current_stage = current_stage
         print(self.current_stage)
+        self.llm_agent.action_history.append(self.current_stage)
 
         if 'wait' in self.current_stage.lower():
             self.selected_action = Action.STAY 

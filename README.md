@@ -1,3 +1,31 @@
+Overcooked environment(Multi-agent) support:
+
+Run the following command to create the Overcooked dataset. The dataset contains the initial input ids describing the first observation(for both agents) of a random environment. The prefix can be [qwen-instruct, deepseek] depending on which series of model is used(slightly different in the instruction format).
+
+```bash   
+python ragen/env/overcooked/create_dataset.py \
+        --output data/overcooked \
+        --seed 100000 \
+        --train_size 512 \
+        --test_size 64 \
+        --prefix deepseek
+```
+
+Run the following command to start RL training. For each environment in the dataset, I will rollout the trajectory for both agents(temporarily I use one model, then  randomly select one of the two trajectories to update the model). If self-play works well, it's convenient to move to cross-play training.
+
+```bash
+bash train.sh overcooked \
+    model.experiment_name=overcooked \
+    model.base_model=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+    training.micro_batch_size=1 \ 
+    training.train_batch_size=1 \
+    training.ppo_batch_size=1 \
+    training.val_batch_size=1
+```
+
+
+
+
 <h1 align="center"> RAGEN: Training Agents by Reinforcing Reasoning </h1>
 
 

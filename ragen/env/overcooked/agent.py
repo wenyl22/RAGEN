@@ -30,6 +30,7 @@ class LLMAgent:
 
         self.action_set = LLMActionSet[self.layout_name]
         self.player_actions = []
+        self.action_history = []
 
         # Set other player ID 
         if int(self.player_id) == 0:
@@ -286,8 +287,8 @@ class LLMAgent:
 
         return description
 
-    def _state_to_description(self, state_for_llm, other_player_message):
-        print('STATE FOR LLM: ', state_for_llm)
+    def _state_to_description(self, state_for_llm, other_player_message = ''):
+#        print('STATE FOR LLM: ', state_for_llm)
         state_for_llm = self._correct_dish_to_plate(state_for_llm)
         description = self._add_history() 
         # Add state information in natural language 

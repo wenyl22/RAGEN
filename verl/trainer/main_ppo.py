@@ -44,7 +44,7 @@ ENV_CLASS_MAPPING = {
 def _select_rm_score_fn(data_source):
     if "countdown" in data_source:
         return countdown.compute_score
-    elif "sokoban" in data_source or "frozenlake" in data_source or "bandit" in data_source:
+    elif "sokoban" in data_source or "frozenlake" in data_source or "bandit" in data_source or "overcooked" in data_source:
         def judge_fn(*args, **kwargs):
             solution = kwargs['solution_str']
             # 1. reward based on the game:
@@ -118,12 +118,13 @@ class RewardManager():
 
             # select rm_score
             data_source = data_item.non_tensor_batch['data_source']
-            compute_score_fn = _select_rm_score_fn(data_source)
+#            compute_score_fn = _select_rm_score_fn(data_source)
 
             if data_source in ENV_CLASS_MAPPING.keys():
                 if 'reward' not in data_item.non_tensor_batch.keys():
+                    assert False, "reward is not in data_item.non_tensor_batch.keys(), probably because validate is not implemented"
                     # TODO: currently validate is not implemented
-                    score = compute_score_fn(solution_str=sequences_str, ground_truth=ground_truth)
+#                    score = compute_score_fn(solution_str=sequences_str, ground_truth=ground_truth)
                     # print("[WARNING] reward is not in data_item.non_tensor_batch.keys(), probably because validate is not implemented")
                 else:
                     score = data_item.non_tensor_batch['reward']
@@ -257,6 +258,7 @@ def main_task(config):
                             val_env=val_env,
                             env_class=env_class)
     trainer.init_workers()
+    print("workers initialized")
     trainer.fit()
 
 

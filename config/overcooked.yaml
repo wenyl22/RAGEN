@@ -1,0 +1,5 @@
+# Environment settings
+env:
+  name: "overcooked"
+  data_dir: "data/overcooked"
+  env_kwargs:
